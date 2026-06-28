@@ -1,0 +1,66 @@
+# =========================================================
+# Horror Shorts Agent — config
+# Edit this file to control everything about the channel.
+# =========================================================
+
+channel:
+  niche: "short-form horror stories"
+  format: "youtube_shorts"        # vertical 1080x1920
+  target_duration_seconds: [40, 58]   # YouTube Shorts must be <= 60s
+  language: "en"
+
+# How many stories to generate per run (1 run = 1 video).
+# The GitHub Actions workflow calls this script twice a day.
+run:
+  publish_mode: "review"          # "review" = upload as UNLISTED so a human can sanity-check.
+                                    # Switch to "public" only after you've watched several outputs.
+  avoid_repeat_window: 30          # don't reuse a premise/twist used in the last N stories
+
+# Director Agent (story writing) — uses the Anthropic API.
+director:
+  model: "claude-sonnet-4-6"
+  max_scenes: 7
+  min_scenes: 5
+  hook_seconds: 5                 # the agent is instructed to make the first 5s stop the scroll
+  style_notes: >
+    Cold open. No throat-clearing. First line must be a hook or an unsettling image,
+    never a setup like "It was a normal day". Vary structure between runs:
+    alternate between first-person "this happened to me" framing, third-person narrated
+    folklore framing, and found-footage/diary framing so the channel doesn't look templated.
+
+# Image generation (free, no API key — Pollinations.ai text-to-image)
+image:
+  provider: "pollinations"
+  width: 1024
+  height: 1820                    # ~9:16
+  style_lock: "cinematic horror film still, 35mm grain, moody volumetric lighting, muted desaturated color grade, high detail"
+  # A fixed numeric seed per character (set by director_agent) is the main free lever
+  # we have for keeping a character's face roughly consistent across scenes.
+
+# Voice generation (free, unlimited — Microsoft Edge TTS via edge-tts)
+voice:
+  provider: "edge-tts"
+  narrator_voice: "en-US-GuyNeural"      # used for non-character narration lines
+  voice_map:                             # fallback pool the director's character age/gender maps into
+    male_young: "en-US-DavisNeural"
+    male_adult: "en-US-GuyNeural"
+    male_old: "en-US-RogerNeural"
+    female_young: "en-US-AriaNeural"
+    female_adult: "en-US-JennyNeural"
+    female_old: "en-US-NancyNeural"
+    child: "en-US-AnaNeural"
+
+# Background music + SFX — pulled from LOCAL files you drop into assets/,
+# not a live API, so nothing here ever silently breaks.
+audio:
+  music_dir: "assets/music"
+  sfx_dir: "assets/sfx"
+  music_duck_db: -18              # how much to lower music under dialogue
+  master_volume_db: 0
+
+# YouTube upload (requires YOUR OAuth credentials — see README)
+youtube:
+  category_id: "24"               # Entertainment
+  made_for_kids: false
+  default_tags: ["horror story", "scary story", "horror shorts", "creepypasta"]
+  self_certify_synthetic: true     # ticks YouTube's "altered/synthetic content" disclosure box
