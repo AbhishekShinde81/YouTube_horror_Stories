@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(gh auth *)",
+      "PowerShell(git *)",
+      "PowerShell($cred = [System.Net.CredentialCache]::DefaultNetworkCredentials; Add-Type -AssemblyName System.Security; $cm = New-Object System.Net.NetworkCredential; [void][Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]; $vault = New-Object Windows.Security.Credentials.PasswordVault; try { $creds = $vault.FindAllByResource\\(\"git:https://github.com\"\\); $creds | ForEach-Object { $_.RetrievePassword\\(\\); Write-Output \"$\\($_.UserName\\):$\\($_.Password\\)\" } } catch { Write-Output \"not found in vault: $_\" })"
+    ]
+  }
+}
