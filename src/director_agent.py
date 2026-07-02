@@ -1,19 +1,10 @@
 """
 director_agent.py
 ------------------
-The "writer + director" of the pipeline.
-
-Calls Claude to produce ONE complete short-horror-story spec as JSON:
-  - title / hook / SEO metadata
-  - a character bible (locked appearance + voice profile per character,
-    used downstream by image_gen.py and voice_gen.py to stay consistent)
-  - a scene-by-scene shot list (setting, action, camera, dialogue, emotion,
-    sfx cues, music mood, duration)
-
-It also reads state/history.json so it never repeats a premise/twist it has
-already used, and keeps rotating the narrative *framing* (first-person,
-folklore, found-footage...) so the channel doesn't look templated to
-YouTube's inauthentic-content systems (see README "Monetization risk").
+Writes the horror story + scene/character spec using Google Gemini API.
+FREE tier (gemini-1.5-flash): 15 requests/minute, 1M tokens/day.
+Get your free key at: aistudio.google.com -> "Get API Key" (no credit card needed).
+Set it as GitHub secret: GEMINI_API_KEY
 """
 import json
 import os
@@ -23,8 +14,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import google.generativeai as genai
 import yaml
-from anthropic import Anthropic
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.yaml"
@@ -48,6 +39,7 @@ Return ONLY valid JSON (no markdown fences, no commentary) matching exactly this
   "tags": ["...", "..."],
   "thumbnail_concept": "one sentence describing the thumbnail-worthy frozen moment",
   "framing": "which framing style you used",
+  "human_note": "one-line first-person aside for a pinned comment, casual and personal",
   "hook": {
     "text": "the exact first line(s) spoken/narrated in the first ~5 seconds",
     "visual": "what's on screen during the hook"
@@ -59,26 +51,26 @@ Return ONLY valid JSON (no markdown fences, no commentary) matching exactly this
       "role": "protagonist | other | entity",
       "age": 0,
       "gender": "male | female | nonbinary | unspecified",
-      "appearance_lock": "extremely specific, reusable visual description: face shape, hair, skin, clothing, distinguishing marks. This exact string will be reused in every scene's image prompt to keep the character consistent, so be concrete and visual, not poetic.",
+      "appearance_lock": "extremely specific, reusable visual description: face shape, hair, skin, clothing, distinguishing marks. This exact string will be reused in every scene prompt.",
       "image_seed": 0,
       "voice_profile": {
         "age_band": "child | young | adult | old",
         "gender": "male | female",
         "baseline_emotion": "calm | anxious | weary | menacing | etc",
-        "accent_note": "optional, e.g. 'flat midwestern US'"
+        "accent_note": "optional"
       }
     }
   ],
   "scenes": [
     {
       "scene_number": 1,
-      "setting": "concrete visual description of location/time/lighting for image generation",
+      "setting": "concrete visual description of location/time/lighting",
       "characters_present": ["char_1"],
-      "action": "what physically happens, for the image prompt and camera direction",
+      "action": "what physically happens",
       "camera": "static wide | slow push in | handheld shake | slow pan | extreme close-up",
       "narration": "narrator line for this scene, or null if none",
       "dialogue": [
-        {"character_id": "char_1", "line": "...", "emotion": "fear|anger|calm|...", "intensity": 1-5}
+        {"character_id": "char_1", "line": "...", "emotion": "fear|anger|calm|...", "intensity": 3}
       ],
       "sfx_cues": ["floorboard creak", "distant whisper"],
       "music_mood": "dread | tension_rising | sting | quiet_unease | release",
@@ -88,14 +80,12 @@ Return ONLY valid JSON (no markdown fences, no commentary) matching exactly this
 }
 
 Rules:
-- 5 to 7 scenes total. Total estimated_duration_seconds across scenes must sum to 40-58.
-- image_seed must be a different random-looking integer per character, fixed for the whole story.
-- appearance_lock strings must stay byte-for-byte identical every time that character is referenced
-  (image_gen.py will literally concatenate this string into every prompt for that character).
-- The hook (first 5 seconds) must be the single most disturbing/curious image or line in the story,
-  not the slowest. Do not "set the scene" before hooking.
-- Avoid premises and twists listed under "avoid" below.
-- End on a cut, not a moral or a summary — short-form horror should feel unresolved/sharp.
+- 5 to 7 scenes total. Total estimated_duration_seconds must sum to 40-58.
+- image_seed must be a different random integer per character.
+- appearance_lock strings must be identical every time that character appears.
+- The hook (first 5 seconds) must be the most disturbing/curious moment — never a slow setup.
+- Avoid premises listed under "avoid" below.
+- End on a sharp unresolved cut — no moral, no summary.
 """
 
 
@@ -121,47 +111,60 @@ def build_prompt(cfg: dict, history: dict) -> str:
     avoid = [e["premise"] for e in history["entries"][-cfg["run"]["avoid_repeat_window"]:]]
     framing = random.choice(FRAMINGS)
     d = cfg["director"]
+    persona = cfg.get("creator_persona", {})
+    persona_block = ""
+    if persona.get("enabled"):
+        persona_block = f"""
+This channel has a consistent narrator persona (use sparingly, not every line):
+  Name/identity: {persona.get('name')}
+  Tone: {persona.get('tone')}
+  Sign-off style: {persona.get('signoff')}
+"""
+    style_notes = d.get("style_notes", "")
     return f"""
 You are a director and screenwriter for a viral YouTube Shorts horror channel.
 Niche: {cfg['channel']['niche']}.
 This episode's narrative framing: {framing}.
+{persona_block}
+{style_notes}
 
-{d['style_notes']}
-
-Target length: {d['min_scenes']}-{d['max_scenes']} scenes, total spoken/visual runtime
+Target length: {d['min_scenes']}-{d['max_scenes']} scenes, total runtime
 {cfg['channel']['target_duration_seconds'][0]}-{cfg['channel']['target_duration_seconds'][1]} seconds.
 
-Premises/twists already used recently — do NOT reuse or lightly reskin these:
+Premises/twists already used — do NOT reuse:
 {json.dumps(avoid, indent=2) if avoid else "(none yet)"}
 
 {SCHEMA_INSTRUCTIONS}
 """.strip()
 
 
-def call_claude(cfg: dict, prompt: str) -> dict:
-    client = Anthropic()  # reads ANTHROPIC_API_KEY from env
-    resp = client.messages.create(
-        model=cfg["director"]["model"],
-        max_tokens=4000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    text = "".join(block.text for block in resp.content if block.type == "text")
-    text = text.strip()
+def call_gemini(cfg: dict, prompt: str) -> dict:
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY environment variable not set. "
+                           "Get a free key at aistudio.google.com and add it as a GitHub secret.")
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(cfg["director"]["model"])
+    response = model.generate_content(prompt)
+    text = response.text.strip()
+    # Strip markdown fences if the model adds them
     if text.startswith("```"):
         text = text.split("```")[1]
         if text.startswith("json"):
             text = text[4:]
+        text = text.strip()
     return json.loads(text)
 
 
 def validate(story: dict, cfg: dict) -> None:
     assert story.get("scenes"), "no scenes returned"
     n = len(story["scenes"])
-    assert cfg["director"]["min_scenes"] <= n <= cfg["director"]["max_scenes"], f"scene count {n} out of range"
+    assert cfg["director"]["min_scenes"] <= n <= cfg["director"]["max_scenes"], \
+        f"scene count {n} out of range"
     total = sum(s["estimated_duration_seconds"] for s in story["scenes"])
     lo, hi = cfg["channel"]["target_duration_seconds"]
     if not (lo - 5 <= total <= hi + 10):
-        print(f"[warn] total duration {total}s is outside target {lo}-{hi}s, continuing anyway")
+        print(f"[warn] total duration {total}s outside target {lo}-{hi}s, continuing")
     char_ids = {c["id"] for c in story["characters"]}
     for s in story["scenes"]:
         for cid in s.get("characters_present", []):
@@ -179,10 +182,10 @@ def run() -> Path:
     last_err = None
     for attempt in range(3):
         try:
-            story = call_claude(cfg, prompt)
+            story = call_gemini(cfg, prompt)
             validate(story, cfg)
             break
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             last_err = e
             print(f"[director_agent] attempt {attempt + 1} failed: {e}")
             time.sleep(2)
@@ -192,7 +195,14 @@ def run() -> Path:
     run_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     out_dir = ROOT / "output" / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    story["visual_style"] = random.choice(cfg["image"]["style_lock_options"])
     (out_dir / "story.json").write_text(json.dumps(story, indent=2))
+
+    if cfg.get("human_touches", {}).get("generate_pinned_comment_draft") and story.get("human_note"):
+        (out_dir / "pinned_comment_DRAFT.txt").write_text(
+            story["human_note"] + "\n\n(^ draft — edit into your own words before pinning)\n"
+        )
 
     history["entries"].append({
         "run_id": run_id,
@@ -210,6 +220,6 @@ if __name__ == "__main__":
     try:
         path = run()
         print(path)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"[director_agent] FATAL: {e}", file=sys.stderr)
         sys.exit(1)

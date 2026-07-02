@@ -2,11 +2,20 @@ name: publish-horror-short
 
 on:
   schedule:
-    # Twice a day. Times are UTC. These two slots land in US evening (~7pm ET)
-    # and South/Southeast Asia evening (~7pm IST) — adjust to match where you
-    # expect your actual audience to be once you have real Analytics data.
-    - cron: "30 23 * * *"   # 23:30 UTC = 7:30pm US Eastern
-    - cron: "30 13 * * *"   # 13:30 UTC = 7:00pm IST
+    # ---- PHASE 1 (first ~4 days): once a day ----
+    - cron: "30 13 * * *"   # 13:30 UTC = ~7:00pm IST / ~9:30am US Eastern
+
+    # ---- PHASE 2 (after ~4 days): uncomment ONE of these and delete the
+    #      Phase 1 line above. Pick based on what you actually meant:
+    #
+    # "Twice a week" (as literally stated — safest cadence for a new channel):
+    # - cron: "30 13 * * 1"   # Monday
+    # - cron: "30 13 * * 4"   # Thursday
+    #
+    # "Twice a day" (the original spec — only do this once you trust the
+    # pipeline's output and have watched several full days of videos):
+    # - cron: "30 23 * * *"   # ~7:30pm US Eastern
+    # - cron: "30 13 * * *"   # ~7:00pm IST
   workflow_dispatch: {}      # lets you trigger a run manually from the Actions tab
 
 jobs:
@@ -33,7 +42,7 @@ jobs:
 
       - name: Run pipeline
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python src/pipeline.py
 
       - name: Persist run history back to the repo

@@ -10,15 +10,44 @@ channel:
   language: "en"
 
 # How many stories to generate per run (1 run = 1 video).
-# The GitHub Actions workflow calls this script twice a day.
+# PHASE 1 (first ~4 days): the GitHub Actions workflow runs this ONCE a day.
+# PHASE 2 (after ~4 days): switch the cron schedule — see
+#   .github/workflows/publish.yml for the exact lines to swap.
+# Note: you said "twice a week" for phase 2 — that's a big drop from the
+# original "twice a day" idea. If that was a typo for "twice a day," just
+# say so and I'll flip the cron back; if it's deliberate (slower, safer
+# cadence while the channel is new), the workflow file below already
+# matches "twice a week."
 run:
   publish_mode: "review"          # "review" = upload as UNLISTED so a human can sanity-check.
                                     # Switch to "public" only after you've watched several outputs.
   avoid_repeat_window: 30          # don't reuse a premise/twist used in the last N stories
 
-# Director Agent (story writing) — uses the Anthropic API.
+# A consistent on-channel "voice" — this is the main lever for NOT looking
+# like a templated bot channel. Real channels have a recognizable host;
+# give yours one. Edit name/tone/signoff to taste.
+creator_persona:
+  enabled: true
+  name: "The Night Record"               # how the narrator occasionally refers to the channel/itself
+  tone: "wry, a little world-weary, talks to the viewer like they're trusted with something uncomfortable"
+  signoff: "varies — sometimes a direct address to the viewer, sometimes none at all. Never the same line twice in a row."
+
+# Human-in-the-loop habits the CODE can't do for you, listed here so
+# they're not buried only in the README:
+#   - Read every story.json output during review mode, at least skim it.
+#   - Edit/replace the auto-suggested pinned comment ("human_note" field
+#     in story.json) in your own words before publishing.
+#   - Reply to a handful of real comments yourself, especially early on.
+#   - Occasionally hand-edit a title or thumbnail concept instead of
+#     accepting the generated one verbatim.
+human_touches:
+  generate_pinned_comment_draft: true   # director_agent writes a draft; YOU edit it before posting
+  vary_signoff_every_run: true
+
+# Director Agent (story writing) — uses Google Gemini API (FREE tier).
+# Get your free key at: aistudio.google.com -> Get API Key (no credit card needed)
 director:
-  model: "claude-sonnet-4-6"
+  model: "gemini-1.5-flash"      # free tier: 15 RPM, 1M tokens/day — more than enough
   max_scenes: 7
   min_scenes: 5
   hook_seconds: 5                 # the agent is instructed to make the first 5s stop the scroll
@@ -33,7 +62,15 @@ image:
   provider: "pollinations"
   width: 1024
   height: 1820                    # ~9:16
-  style_lock: "cinematic horror film still, 35mm grain, moody volumetric lighting, muted desaturated color grade, high detail"
+  # A LIST, not one fixed string — director_agent rotates through these so
+  # the channel's visual texture varies over time instead of every video
+  # looking like it came off the exact same template (another human-touch /
+  # anti-templating signal).
+  style_lock_options:
+    - "cinematic horror film still, 35mm grain, moody volumetric lighting, muted desaturated color grade, high detail"
+    - "dark academia oil-painting style, heavy chiaroscuro lighting, textured canvas grain"
+    - "grainy VHS found-footage still, slight chromatic aberration, low-fi night-vision feel"
+    - "modern elevated-horror cinematography, shallow depth of field, cool teal-and-orange grade"
   # A fixed numeric seed per character (set by director_agent) is the main free lever
   # we have for keeping a character's face roughly consistent across scenes.
 
