@@ -52,7 +52,9 @@
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
       "Bash(python -m pip --version)",
-      "Bash(python -m pip install -r requirements.txt)"
+      "Bash(python -m pip install -r requirements.txt)",
+      "WebSearch",
+      "Bash(python *)"
     ]
   }
 }

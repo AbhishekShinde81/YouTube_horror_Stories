@@ -163,6 +163,14 @@ def call_gemini(cfg: dict, prompt: str) -> dict:
     return json.loads(text)
 
 
+def _is_zero_quota_error(e: Exception) -> bool:
+    # The genai SDK's 429 includes a real RetryInfo delay when you're merely rate-limited
+    # (retrying helps). "limit: 0" instead means the key's project has no free-tier quota
+    # allocated at all -- retrying, even after the suggested delay, will never succeed.
+    text = str(e)
+    return "RESOURCE_EXHAUSTED" in text and "limit: 0" in text and "free_tier" in text
+
+
 def validate(story: dict, cfg: dict) -> None:
     assert story.get("scenes"), "no scenes returned"
     n = len(story["scenes"])
@@ -195,6 +203,13 @@ def run() -> Path:
         except Exception as e:
             last_err = e
             print(f"[director_agent] attempt {attempt + 1} failed: {e}")
+            if _is_zero_quota_error(e):
+                raise RuntimeError(
+                    "GEMINI_API_KEY has zero free-tier quota for this model (limit: 0). "
+                    "This is not a transient rate limit -- retrying will not help. Generate "
+                    "a new key at aistudio.google.com (let it provision a fresh project rather "
+                    "than reusing an existing one) and update the GEMINI_API_KEY GitHub secret."
+                ) from e
             time.sleep(2)
     else:
         raise RuntimeError(f"director_agent failed after 3 attempts: {last_err}")
