@@ -14,7 +14,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import google.generativeai as genai
+import google.genai as genai
+from google.genai import types
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -143,9 +144,15 @@ def call_gemini(cfg: dict, prompt: str) -> dict:
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY environment variable not set. "
                            "Get a free key at aistudio.google.com and add it as a GitHub secret.")
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(cfg["director"]["model"])
-    response = model.generate_content(prompt)
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(
+        model=cfg["director"]["model"],
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            temperature=1.0,
+            max_output_tokens=4000,
+        ),
+    )
     text = response.text.strip()
     # Strip markdown fences if the model adds them
     if text.startswith("```"):

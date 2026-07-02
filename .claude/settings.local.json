@@ -50,7 +50,9 @@
       "Bash(python src/youtube_uploader.py --authorize)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(python -m pip --version)",
+      "Bash(python -m pip install -r requirements.txt)"
     ]
   }
 }

@@ -47,7 +47,7 @@ human_touches:
 # Director Agent (story writing) — uses Google Gemini API (FREE tier).
 # Get your free key at: aistudio.google.com -> Get API Key (no credit card needed)
 director:
-  model: "gemini-1.5-flash"      # free tier: 15 RPM, 1M tokens/day — more than enough
+  model: "gemini-2.0-flash"      # free tier: 15 RPM, 1M tokens/day — more than enough
   max_scenes: 7
   min_scenes: 5
   hook_seconds: 5                 # the agent is instructed to make the first 5s stop the scroll
