@@ -173,6 +173,14 @@ def _is_zero_quota_error(e: Exception) -> bool:
     return "RESOURCE_EXHAUSTED" in text and "limit: 0" in text and "free_tier" in text
 
 
+def _is_daily_quota_error(e: Exception) -> bool:
+    # GenerateRequestsPerDayPerProjectPerModel is a once-a-day cap. The API still attaches
+    # a short RetryInfo delay (e.g. "39s"), but that's a generic value -- it does not reflect
+    # when the daily window actually resets, so retrying soon after will just fail again.
+    text = str(e)
+    return "RESOURCE_EXHAUSTED" in text and "GenerateRequestsPerDayPerProjectPerModel" in text
+
+
 def validate(story: dict, cfg: dict) -> None:
     assert story.get("scenes"), "no scenes returned"
     n = len(story["scenes"])
@@ -211,6 +219,14 @@ def run() -> Path:
                     "This is not a transient rate limit -- retrying will not help. Generate "
                     "a new key at aistudio.google.com (let it provision a fresh project rather "
                     "than reusing an existing one) and update the GEMINI_API_KEY GitHub secret."
+                ) from e
+            if _is_daily_quota_error(e):
+                raise RuntimeError(
+                    "GEMINI_API_KEY has hit its free-tier daily request quota for this model. "
+                    "The API's suggested retry delay (a few seconds) does not apply to a daily "
+                    "cap -- retrying now will not help. Wait for the quota to reset (~24h from "
+                    "when the daily window started), reduce how often the workflow runs, or "
+                    "switch to a paid tier."
                 ) from e
             time.sleep(2)
     else:
