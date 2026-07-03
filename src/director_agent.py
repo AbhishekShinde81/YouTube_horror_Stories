@@ -153,6 +153,8 @@ def call_gemini(cfg: dict, prompt: str) -> dict:
             max_output_tokens=4000,
         ),
     )
+    if response.text is None:
+        raise RuntimeError("Gemini API returned no text (response may have been blocked or empty).")
     text = response.text.strip()
     # Strip markdown fences if the model adds them
     if text.startswith("```"):
