@@ -54,7 +54,17 @@
       "Bash(python -m pip --version)",
       "Bash(python -m pip install -r requirements.txt)",
       "WebSearch",
-      "Bash(python *)"
+      "Bash(python *)",
+      "Bash(gh run *)",
+      "PowerShell(winget list *)",
+      "Bash(curl *)",
+      "Read(//tmp/**)",
+      "Bash(env)",
+      "Bash(git config *)",
+      "Bash(git credential *)",
+      "Bash(pip show *)",
+      "Bash(xargs wc -l)",
+      "Bash(git reset *)"
     ]
   }
 }
